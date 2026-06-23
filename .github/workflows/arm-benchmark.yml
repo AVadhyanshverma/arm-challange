@@ -21,35 +21,30 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake jq
-          pip install huggingface_hub
+          sudo apt-get install -y unzip jq
 
-      - name: Build llama.cpp (Arm64 Native)
+      - name: Download Pre-built llama.cpp (Arm64 Native)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git clone https://github.com/ggerganov/llama.cpp
-          cd llama.cpp
-          cmake -B build
-          cmake --build build --config Release -j 4
-          pip install -r requirements.txt
+          echo "Downloading latest pre-built llama.cpp for aarch64..."
+          mkdir -p ./llama.cpp/build/bin/
+          mkdir -p ./llama_bin/
+          
+          # Download the latest pre-built binary for ubuntu-aarch64
+          gh release download -R ggerganov/llama.cpp --pattern "*ubuntu-aarch64.zip" --dir ./llama_bin
+          
+          # Unzip it into the expected directory
+          unzip -j ./llama_bin/*ubuntu-aarch64.zip -d ./llama.cpp/build/bin/
+          chmod +x ./llama.cpp/build/bin/*
 
-      - name: Download Raw Model from HuggingFace
+      - name: Download Quantized Model Artifact (Avoid Re-Quantizing)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          huggingface-cli download Nanbeige/Nanbeige4.1-3B --local-dir ./models/nanbeige-3b
-
-      - name: Convert to GGUF (FP16)
-        run: |
-          python llama.cpp/convert_hf_to_gguf.py ./models/nanbeige-3b --outfile ./nanbeige-3b-f16.gguf
-
-      - name: Quantize to Q5_K_M
-        run: |
-          ./llama.cpp/build/bin/llama-quantize ./nanbeige-3b-f16.gguf ./nanbeige-3b-q5_k_m.gguf Q5_K_M
-
-      - name: Upload Quantized Model as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Nanbeige-3B-Q5_K_M
-          path: ./nanbeige-3b-q5_k_m.gguf
-          retention-days: 7 # Will stay on GitHub for 7 days for you to download
+          echo "Downloading Q5_K_M model from previous successful run (ID: 28031834372)..."
+          gh run download 28031834372 -n Nanbeige-3B-Q5_K_M -D .
+          ls -lh nanbeige-3b-q5_k_m.gguf
 
       - name: Run Benchmark Test (JSON Evaluation)
         run: |
@@ -65,7 +60,7 @@ jobs:
           # Only run the first 5 questions to save CI execution time (approx 2-3 mins instead of 25+ mins)
           for i, q in enumerate(questions[:5]):
               print(f"\n=========================================")
-              print(f"Question {i+1}/{len(questions)}: {q}")
+              print(f"Question {i+1}/{len(questions[:5])}: {q}")
               print(f"=========================================")
               
               cmd = [
