@@ -3,11 +3,11 @@ name: Arm64 Optimization & Quantization Benchmark
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch: # Allows you to manually trigger the run
+  workflow_dispatch:
 
 jobs:
   build-quantize-benchmark:
-    runs-on: ubuntu-24.04-arm # Uses GitHub's native Arm64 cloud runner
+    runs-on: ubuntu-24.04-arm # Native Arm64 cloud runner
     
     steps:
       - name: Checkout Repository
@@ -21,22 +21,16 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y unzip jq
+          sudo apt-get install -y build-essential cmake jq
 
-      - name: Download Pre-built llama.cpp (Arm64 Native)
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Build llama.cpp (Fast Native Compilation)
         run: |
-          echo "Downloading latest pre-built llama.cpp for aarch64..."
-          mkdir -p ./llama.cpp/build/bin/
-          mkdir -p ./llama_bin/
-          
-          # Download the latest pre-built binary for ubuntu-aarch64
-          gh release download -R ggerganov/llama.cpp --pattern "*ubuntu-aarch64.zip" --dir ./llama_bin
-          
-          # Unzip it into the expected directory
-          unzip -j ./llama_bin/*ubuntu-aarch64.zip -d ./llama.cpp/build/bin/
-          chmod +x ./llama.cpp/build/bin/*
+          echo "Building llama.cpp from source (takes ~1 minute)..."
+          git clone https://github.com/ggerganov/llama.cpp
+          cd llama.cpp
+          cmake -B build
+          cmake --build build --config Release -j 4
+          pip install -r requirements.txt
 
       - name: Download Quantized Model Artifact (Avoid Re-Quantizing)
         env:
@@ -49,7 +43,6 @@ jobs:
       - name: Run Benchmark Test (JSON Evaluation)
         run: |
           echo "Starting Model Benchmark on Arm64..."
-          # Python script to load JSON and run the model automatically
           python3 -c '
           import json
           import subprocess
@@ -57,7 +50,7 @@ jobs:
           with open("test_questions.json", "r") as f:
               questions = json.load(f)
 
-          # Only run the first 5 questions to save CI execution time (approx 2-3 mins instead of 25+ mins)
+          # Only run the first 5 questions to save CI execution time
           for i, q in enumerate(questions[:5]):
               print(f"\n=========================================")
               print(f"Question {i+1}/{len(questions[:5])}: {q}")
@@ -70,7 +63,6 @@ jobs:
                   "--log-disable", "-p", q
               ]
               
-              # Run the model and feed "/exit" to stdin to break the interactive loop
               process = subprocess.Popen(cmd, stdin=subprocess.PIPE, text=True)
               process.communicate(input="/exit\n")
           '
