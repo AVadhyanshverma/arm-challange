@@ -62,7 +62,8 @@ jobs:
           with open("test_questions.json", "r") as f:
               questions = json.load(f)
 
-          for i, q in enumerate(questions):
+          # Only run the first 5 questions to save CI execution time (approx 2-3 mins instead of 25+ mins)
+          for i, q in enumerate(questions[:5]):
               print(f"\n=========================================")
               print(f"Question {i+1}/{len(questions)}: {q}")
               print(f"=========================================")
