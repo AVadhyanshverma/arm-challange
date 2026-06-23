@@ -1,0 +1,18 @@
+# Ignore heavy AI models (to prevent uploading 8GB to GitHub)
+models/
+*.gguf
+*.safetensors
+
+# Ignore the local llama.cpp engine (GitHub Actions will download and build its own fresh copy)
+llama.cpp/
+
+# Ignore Python environments and cache
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore IDE and OS generated files
+.vscode/
+.DS_Store
+.waste/

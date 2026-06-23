@@ -1,0 +1,80 @@
+name: Arm64 Optimization & Quantization Benchmark
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: # Allows you to manually trigger the run
+
+jobs:
+  build-quantize-benchmark:
+    runs-on: ubuntu-24.04-arm # Uses GitHub's native Arm64 cloud runner
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake jq
+          pip install huggingface_hub
+
+      - name: Build llama.cpp (Arm64 Native)
+        run: |
+          git clone https://github.com/ggerganov/llama.cpp
+          cd llama.cpp
+          cmake -B build
+          cmake --build build --config Release -j 4
+          pip install -r requirements.txt
+
+      - name: Download Raw Model from HuggingFace
+        run: |
+          huggingface-cli download Nanbeige/Nanbeige4.1-3B --local-dir ./models/nanbeige-3b
+
+      - name: Convert to GGUF (FP16)
+        run: |
+          python llama.cpp/convert_hf_to_gguf.py ./models/nanbeige-3b --outfile ./nanbeige-3b-f16.gguf
+
+      - name: Quantize to Q5_K_M
+        run: |
+          ./llama.cpp/build/bin/llama-quantize ./nanbeige-3b-f16.gguf ./nanbeige-3b-q5_k_m.gguf Q5_K_M
+
+      - name: Upload Quantized Model as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nanbeige-3B-Q5_K_M
+          path: ./nanbeige-3b-q5_k_m.gguf
+          retention-days: 7 # Will stay on GitHub for 7 days for you to download
+
+      - name: Run Benchmark Test (JSON Evaluation)
+        run: |
+          echo "Starting Model Benchmark on Arm64..."
+          # Python script to load JSON and run the model automatically
+          python3 -c '
+          import json
+          import subprocess
+
+          with open("test_questions.json", "r") as f:
+              questions = json.load(f)
+
+          for i, q in enumerate(questions):
+              print(f"\n=========================================")
+              print(f"Question {i+1}/{len(questions)}: {q}")
+              print(f"=========================================")
+              
+              cmd = [
+                  "./llama.cpp/build/bin/llama-cli",
+                  "-m", "./nanbeige-3b-q5_k_m.gguf",
+                  "-t", "4", "-b", "512", "-fa", "on", "-c", "2048",
+                  "--log-disable", "-p", q
+              ]
+              
+              # Run the model and feed "/exit" to stdin to break the interactive loop
+              process = subprocess.Popen(cmd, stdin=subprocess.PIPE, text=True)
+              process.communicate(input="/exit\n")
+          '
